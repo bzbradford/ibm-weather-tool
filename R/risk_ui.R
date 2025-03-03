@@ -55,6 +55,7 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
         tagList(
           uiOutput(ns("opts_ui")),
           uiOutput(ns("selected_site_ui")),
+          uiOutput(ns("weather_missing_ui")),
           uiOutput(ns("plots_ui"))
         )
       })
@@ -106,6 +107,16 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
           ),
           selected = input$show_all_sites %||% TRUE,
           inline = TRUE
+        )
+      })
+
+      ## weather_missing_ui // renderUI ----
+      output$weather_missing_ui <- renderUI({
+        sites <- wx_data()$sites
+        req(rv$weather_ready && nrow(sites) > 0 && any(sites$needs_download))
+        div(
+          style = "margin-bottom: 15px;",
+          missing_weather_ui(n = nrow(sites))
         )
       })
 
@@ -169,7 +180,8 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
 
         elems <- lapply(site_labels, function(label) {
           df <- site_data %>%
-            filter(site_label == !!label, !is.na(grid_id))
+            filter(site_label == !!label) %>%
+            drop_na(grid_id, date, value)
 
           content <- if (nrow(df) > 0) {
             df <- df %>%
@@ -190,22 +202,12 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
               )
             )
           } else {
-            div(
-              span(style = "color: orange;", icon("warning")),
-              em("This site does not have any weather data downloaded yet. Press 'Fetch weather' on the sidebar to download any missing data.")
-            )
+            strong("No data downloaded yet for this site.")
           }
 
-          div(
-            style = "border: 1px solid hsl(210, 40%, 80%); border-radius: 5px;",
-            div(
-              style = "background: hsl(210, 40%, 95%); padding: 5px 10px; font-size: large; font-weight: bold; border-radius: 5px;",
-              label,
-            ),
-            div(
-              style = "background: white; padding: 5px 10px; border-radius: 5px;",
-              content,
-            )
+          div(style = "border: 1px solid hsl(210, 40%, 80%); border-radius: 5px;",
+            div(label, style = "background: hsl(210, 40%, 95%); padding: 5px 10px; font-size: large; font-weight: bold; border-radius: 5px;"),
+            div(content, style = "background: white; padding: 5px 10px; border-radius: 5px;")
           )
         })
 

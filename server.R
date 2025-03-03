@@ -238,6 +238,8 @@ server <- function(input, output, session) {
       rv$sites <- sites
       rv$selected_site <- first(sites$id)
       fit_sites()
+      # causes the fetch weather button to fire
+      rv$fetch_on_load <- TRUE
       showNotification(paste("Loaded", nrow(sites), ifelse(nrow(sites) == 1, "site", "sites"), "from a previous session."))
     }, error = function(e) {
       message("Failed to read sites from cookie: ", e)
@@ -511,29 +513,31 @@ server <- function(input, output, session) {
     div(
       class = "flex-across",
       btn("date_last_year", "Last year"),
+      # btn("date_last_season", "Last season"),
       btn("date_this_year", "This year"),
       btn("date_past_month", "Past month")
     )
   })
 
-  ### Handle date_last_year button ----
+  ### Handle date buttons ----
   observeEvent(input$date_last_year, {
     yr <- year(today()) - 1
     updateDateInput(inputId = "start_date", value = make_date(yr, 1, 1))
     updateDateInput(inputId = "end_date", value = make_date(yr, 12, 31))
   })
 
-  ### Handle date_this_year button ----
+  # observeEvent(input$date_last_season, {
+  #   yr <- year(today()) - 1
+  #   updateDateInput(inputId = "start_date", value = make_date(yr, 5, 1))
+  #   updateDateInput(inputId = "end_date", value = make_date(yr, 10, 31))
+  # })
+
   observeEvent(input$date_this_year, {
     yr <- year(today())
     updateDateInput(inputId = "start_date", value = make_date(yr, 1, 1))
-    updateDateInput(
-      inputId = "end_date",
-      value = min(make_date(yr, 12, 31), today())
-    )
+    updateDateInput(inputId = "end_date", value = min(make_date(yr, 12, 31), today()) )
   })
 
-  ### Handle date_past_month button ----
   observeEvent(input$date_past_month, {
     updateDateInput(inputId = "start_date", value = today() - 30)
     updateDateInput(inputId = "end_date", value = today())
@@ -544,10 +548,12 @@ server <- function(input, output, session) {
 
   ### need_weather // reactive ----
   need_weather <- reactive({
+    # weather checks
     wx <- rv$weather
     if (is.null(wx)) return(TRUE)
     if (nrow(wx) == 0) return(TRUE)
-    # dates <-
+
+    if (nrow(rv$sites) == 0) return(FALSE)
     # if (nrow(selected_weather()) == 0) return(TRUE)
     sites <- sites_with_status()
     if (anyNA(sites$grid_id)) return(TRUE)
@@ -590,8 +596,9 @@ server <- function(input, output, session) {
   })
 
   ### Handle fetching ----
-  observeEvent(input$fetch, {
+  observe({
     sites <- rv$sites
+    req(nrow(sites) > 0)
     date_range <- selected_dates()
     disable("fetch")
     runjs("$('#fetch').html('Downloading weather...')")
@@ -612,7 +619,7 @@ server <- function(input, output, session) {
     )
     rv$action_nonce <- runif(1)
     rv$weather <- saved_weather
-  })
+  }) %>% bindEvent(rv$fetch_on_load, input$fetch)
 
 
 
@@ -805,13 +812,14 @@ server <- function(input, output, session) {
   ## Show weather data grids ----
   observe({
     map <- leafletProxy("map")
+    clearGroup(map, "grid")
     grids <- grids_with_status()
 
     if (nrow(grids) > 0) {
       grids <- grids %>%
         mutate(
-          title = if_else(needs_download, "Incomplete weather grid", "Downloaded weather grid"),
-          color = if_else(needs_download, "orange", "blue"),
+          title = if_else(days_missing > 0, "Incomplete weather grid", "Downloaded weather grid"),
+          color = if_else(days_missing > 0, "orange", "blue"),
           label = paste0(
             "<b>", title, "</b><br>",
             "Earliest date: ", date_min, "<br>",
@@ -833,8 +841,6 @@ server <- function(input, output, session) {
           fillColor = ~color,
           options = pathOptions(pane = "grid")
         )
-    } else {
-      clearGroup(map, "grid")
     }
 
   })

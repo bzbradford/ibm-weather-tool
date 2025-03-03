@@ -143,12 +143,15 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
         )
       })
 
-      ## data_msg // renderUI ----
-      output$data_msg <- renderUI({
+      ## weather_missing_ui // renderUI ----
+      output$weather_missing_ui <- renderUI({
         sites <- wx_data()$sites
-        hourly <- wx_data()$hourly
-        req(nrow(sites) > 0 && nrow(hourly) > 0 && any(sites$needs_download))
-        span(style = "color: red;", "Some sites are missing data based on your date selections, click 'Fetch weather' to load missing data.")
+        req(rv$weather_ready && nrow(sites) > 0 && any(sites$needs_download))
+
+        div(
+          style = "margin-bottom: 15px;",
+          missing_weather_ui(n = nrow(sites))
+        )
       })
 
       ## plot_ui // renderUI ----
@@ -156,7 +159,7 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
         div(
           uiOutput(ns("plot_cols_ui")),
           uiOutput(ns("plot_sites_ui")),
-          uiOutput(ns("data_msg")),
+          uiOutput(ns("weather_missing_ui")),
           div(
             class = "plotly-container",
             plotlyOutput(ns("data_plot"))
@@ -168,9 +171,10 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
       output$plot_sites_ui <- renderUI({
         sites <- wx_data()$sites
         req(nrow(sites) > 1)
+
         choices <- set_names(sites$id, sprintf("%s: %s", sites$id, str_trunc(sites$name, 15)))
-        # selected <- first_truthy(intersect(input$plot_sites, choices), selected_site())
         selected <- selected_site()
+
         checkboxGroupInput(
           inputId = ns("plot_sites"),
           label = "Sites to display",

@@ -162,7 +162,7 @@ OPTS <- lst(
   plot_legend_font = list(
     family = "Red Hat Text",
     size = 12
-  )
+  ),
 
 )
 
@@ -1223,6 +1223,22 @@ build_gdd_from_daily <- function(daily) {
 
 
 # Helper functions --------------------------------------------------------
+
+missing_weather_ui <- function(n = 1) {
+  msg <- ifelse(
+    n == 1,
+    "This site is missing data based on your date selections.",
+    "One or more sites are missing data based on your date selections."
+  )
+
+  div(
+    style = "display: inline-flex; align-items: center; border: 1px solid orange; border-radius: 5px; background-color: white; padding; 5px;",
+    div(style = "color: orange; padding: 10px; font-size: 1.5em;", icon("warning")),
+    div(em(msg, "Press", strong("Fetch weather"), "on the sidebar to download any missing data."))
+  )
+}
+
+
 
 create_id <- function(ids) {
   ids <- as.integer(ids)
