@@ -7,19 +7,23 @@ ui <- fluidPage(
     tags$meta(charset = "UTF-8"),
     tags$meta(name = "description", content = "A tool for downloading hourly weather data for any location in the continental United States"),
     tags$meta(name = "keywords", content = "uw, wisconsin, weather, tool"),
-    tags$link(rel = "shortcut icon", href = "uw-crest.svg"),
+    tags$link(rel = "shortcut icon", href = OPTS$app_header_badge),
     tags$link(rel = "stylesheet", type = "text/css", href = "style.css"),
     tags$script(src = "script.js"),
     includeHTML("www/google-analytics.html"),
     useShinyjs(),
   ),
   tags$header(
-    div(class = "uw-title",
-      # img(src = "crop-protection-network-logo.png"),
-      img(src = "uw-crest.svg"),
+    style = paste("background-color:", OPTS$app_header_color),
+    div(
+      class = "uw-title",
+      img(src = OPTS$app_header_badge),
       h1(OPTS$app_title)
     ),
-    div(class = "help-btn", actionLink("help", icon("circle-info")))
+    div(
+      class = "help-btn",
+      actionLink("help", icon("circle-info"))
+    )
   ),
   div(class = "main-container",
     div(class = "column sidebar-container",
@@ -41,28 +45,33 @@ ui <- fluidPage(
         )
       )
     ),
-    div(class = "column map-container",
+    div(
+      class = "column map-container",
       leafletOutput("map", height = "100%"),
-      div(class = "search-overlay",
+      div(
+        class = "search-overlay",
         uiOutput("searchbox_ui"),
         uiOutput("coord_search_ui")
       )
     ),
-    div(class = "column data-container",
+    div(
+      class = "column data-container",
       tabsetPanel(
-        tabPanel("Explore data", dataUI()),
-        tabPanel("Crop risk models", riskUI())
+        tabPanel("View data", dataUI(), value = "data"),
+        tabPanel("Crop risk models", riskUI(), value = "risk"),
+        type = "pills",
+        selected = ifelse(OPTS$cpn_mode, "risk", "data")
       )
     )
   ),
   tags$footer(
-    div(class = "footer",
-      "Developed by",
-      a("Ben Bradford", href = "https://entomology.wisc.edu/directory/ben-bradford/", target = "_blank", .noWS = "after"),
-      ", UW-Madison Entomology",
-      br(),
-      a("View source code", href = "https://github.com/bzbradford/weather-tool", target = "_blank", .noWS = "after"),
+    div(OPTS$app_footer_badge),
+    div(
+      class = "credits",
+      HTML("Developed by <a href='https://entomology.wisc.edu/directory/ben-bradford/' target='_blank'>Ben Bradford</a>, UW-Madison Entomology<br>"),
+      HTML("<a href='https://github.com/bzbradford/weather-tool' target='_blank'>View source code</a>"),
     )
+
   )
 )
 

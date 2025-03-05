@@ -34,137 +34,8 @@ suppressPackageStartupMessages({
 
 # options(warn = 2)
 
-
-# Settings ----
-
-OPTS <- lst(
-  app_title = "Researcher's Weather Data Tool",
-  ibm_endpoint = "https://api.weather.com/v3/wx/hod/r1/direct",
-  ibm_key = Sys.getenv("ibm_key"),
-  google_key = Sys.getenv("google_places_key"),
-
-  # radius of the IBM grid cell
-  grid_dim = 1/45.5,
-  ibm_ignore_cols = c(
-    "requestedLatitude",
-    "requestedLongitude",
-    "iconCode",
-    "iconCodeExtended",
-    "drivingDifficultyIndex"
-  ),
-  # how old should weather be before allowing a refresh?
-  ibm_stale_hours = 3,
-
-  # dates
-  earliest_date = ymd("2015-1-1"),
-  default_start_date = today() - 30,
-
-  # map
-  # state_colors = {
-  #   pals = RColorBrewer::brewer.pal.info
-  #   pal = RColorBrewer::brewer.pal
-  #   qual_col_pals = pals[pals$category == 'qual',]
-  #   unlist(mapply(pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
-  # },
-  map_bounds_wi = list(
-    lat1 = 42.4,
-    lat2 = 47.1,
-    lng1 = -93.0,
-    lng2 = -86.8
-  ),
-  map_bounds_us = list(
-    lat1 = 24.0,
-    lat2 = 50.0,
-    lng1 = -125.5,
-    lng2 = -66.0
-  ),
-  map_tiles = list(
-    "ESRI Topo" = providers$Esri.WorldTopoMap,
-    "Satellite" = providers$Esri.WorldImagery,
-    "OpenStreetMap" = providers$OpenStreetMap,
-    "Grey Canvas" = providers$CartoDB.Positron
-  ),
-  map_layers = list(
-    # counties = "States/Counties"
-  ),
-  map_click_zoom = 10,
-
-  # allowable names for site loading
-  site_cols = c(
-    name = "name",
-    name = "location",
-    lat = "lat",
-    lat = "latitude",
-    lng = "lng",
-    lng = "long",
-    lng = "longitude"
-  ),
-  max_sites = 10,
-
-  ## MODULES ##
-
-  # Data tab
-
-  # validation messages
-  validation_sites_ready = "No sites selected, click on the map or load sites in the sidebar.",
-  validation_weather_ready = "No weather data downloaded yet for the selected dates. Click 'Fetch Weather' to download.",
-
-  # data types
-  data_type_choices = list(
-    "Hourly" = "hourly",
-    "Daily" = "daily",
-    "Moving averages" = "ma",
-    "Growing degree days" = "gdd",
-    "Disease models" = "disease"
-  ),
-
-  # Disease risk tab
-
-  risk_crop_choices = list(
-    "Corn" = "corn",
-    "Soybean" = "soy",
-    "Potato/tomato" = "potato",
-    "Carrot" = "carrot",
-    "Beet" = "beet"
-  ),
-
-  risk_info = list(
-    general = "Field crops disease risk assessments are based on probability of spore presence, while algorithms for vegetable diseases vary. Risk model is only valid when the crop is present and in a vulnerable growth stage (if applicable). Risk may be mitigated in commercial production by application of a protective fungicide with the last 14 days. Set the start date to the approximate date of crop emergence for accurate risk assessments. Changing the irrigation and row spacing options below will affect the white mold model output.",
-    corn = "Corn diseases include white mold, tarspot, and gray leaf spot. Risk assessment is only applicable when corn is in the growth stages V10-R3.",
-    soy = "Soybean diseases include white mold and frogeye leaf spot. Soybean is vulnerable to white mold when in the growth stages R1-R3, and vulnerable to frogeye leaf spot when in R1-R5.",
-    potato = "Potato, tomato, eggplant, and other Solanaceous plants are susceptible to white mold, early blight and late blight. Early blight risk depends on the number of potato physiological days (P-days) accumulated since crop emergence, while late blight risk depends on the number of disease severity values generated in the last 14 days and since crop emergence.",
-    carrot = "Carrots are susceptible to the foliar disease Alternaria leaf blight. Alternaria risk depends on the number of disease severity values generated in the last 7 days.",
-    beet = "Beets are susceptible to Cercospora leaf blight. Cercospora risk depends on the average disease severity values in the past 2 days and 7 days."
-  ),
-
-  # add site_ before some columns in the sites table
-  # site_attr_rename = {
-  #   cols <- c("id", "name", "lat", "lng")
-  #   names(cols) <- paste0("site_", cols)
-  #   cols
-  # },
-
-  # plotting
-  site_attr_cols = c("site_id", "site_name", "site_lat", "site_lng", "temp"),
-  grid_attr_cols = c("grid_id", "grid_lat", "grid_lng", "date_min", "date_max", "days_expected", "days_actual", "days_missing", "days_missing_pct", "hours_expected", "hours_actual", "hours_missing", "hours_missing_pct", "geometry"),
-  date_attr_cols = c("datetime_utc", "time_zone", "datetime_local", "date", "yday", "year", "month", "day", "hour", "night", "date_since_night"),
-  daily_attr_cols = c("date", "yday", "year", "month", "day"),
-  plot_default_cols = c("temperature", "temperature_mean", "temperature_mean_7day", "base_50_upper_86_cumulative"),
-  plot_ignore_cols = c(site_attr_cols, grid_attr_cols, date_attr_cols),
-  plot_title_font = list(
-    family = "Red Hat Display",
-    size = 16
-  ),
-  plot_axis_font = list(
-    family = "Red Hat Text",
-    size = 14
-  ),
-  plot_legend_font = list(
-    family = "Red Hat Text",
-    size = 12
-  ),
-
-)
+# Sys.setenv("CPN_MODE" = TRUE)
+# Sys.unsetenv("CPN_MODE")
 
 
 # Functions --------------------------------------------------------------------
@@ -260,8 +131,9 @@ validate_ll <- function(lat, lng) {
 #' creates an appropriately sized grid cell based on centroid coordinates
 #' @param lat latitude of point
 #' @param lng longitude of point
+#' @param d decimal degree distance from center to edge of grid
 #' @returns sf object
-ll_to_grid <- function(lat, lon, d = OPTS$grid_dim) {
+ll_to_grid <- function(lat, lon, d = 1/45.5) {
   m <- list(rbind(
     c(lon - d, lat + d),
     c(lon + d, lat + d),
@@ -271,6 +143,157 @@ ll_to_grid <- function(lat, lon, d = OPTS$grid_dim) {
   ))
   st_sfc(st_polygon(m), crs = 4326)
 }
+
+
+# Settings ----
+
+OPTS <- lst(
+  cpn_mode = Sys.getenv("CPN_MODE") == "TRUE",
+  app_title = ifelse(cpn_mode, "Disease Risk Tool", "Researcher's Weather Data Tool"),
+  app_header_color = ifelse(cpn_mode, "#00693c", "#c5050c"),
+  app_header_badge = ifelse(cpn_mode, "cpn-badge.png", "uw-crest.svg"),
+  app_footer_badge = if (cpn_mode) {
+    a(img(src = "cpn-logo.png", height = "50px"), href = "https://cropprotectionnetwork.org/", target = "_blank")
+  } else {
+    img(src = "uw-logo.svg", height = "40px")
+  },
+  ibm_endpoint = "https://api.weather.com/v3/wx/hod/r1/direct",
+  ibm_key = Sys.getenv("ibm_key"),
+  google_key = Sys.getenv("google_places_key"),
+
+  ibm_ignore_cols = c(
+    "requestedLatitude",
+    "requestedLongitude",
+    "iconCode",
+    "iconCodeExtended",
+    "drivingDifficultyIndex"
+  ),
+  # how old should weather be before allowing a refresh?
+  ibm_stale_hours = 3,
+
+  # dates
+  earliest_date = ymd("2015-1-1"),
+  default_start_date = today() - 30,
+
+  # map
+  # state_colors = {
+  #   pals = RColorBrewer::brewer.pal.info
+  #   pal = RColorBrewer::brewer.pal
+  #   qual_col_pals = pals[pals$category == 'qual',]
+  #   unlist(mapply(pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+  # },
+  map_bounds_wi = list(
+    lat1 = 42.4,
+    lat2 = 47.1,
+    lng1 = -93.0,
+    lng2 = -86.8
+  ),
+  map_bounds_us = list(
+    lat1 = 24.0,
+    lat2 = 50.0,
+    lng1 = -125.5,
+    lng2 = -66.0
+  ),
+  map_tiles = list(
+    "ESRI Topo" = providers$Esri.WorldTopoMap,
+    "Satellite" = providers$Esri.WorldImagery,
+    "OpenStreetMap" = providers$OpenStreetMap,
+    "Grey Canvas" = providers$CartoDB.Positron
+  ),
+  map_layers = list(
+    # counties = "States/Counties"
+  ),
+  map_click_zoom = 10,
+
+  # allowable names for site loading
+  site_cols = c(
+    name = "name",
+    name = "location",
+    lat = "lat",
+    lat = "latitude",
+    lng = "lng",
+    lng = "long",
+    lng = "longitude"
+  ),
+  max_sites = 10,
+
+
+  #-- Data tab
+
+  # validation messages
+  validation_sites_ready = "No sites selected, click on the map or load sites in the sidebar.",
+  validation_weather_ready = "No weather data downloaded yet for the selected dates. Click 'Fetch Weather' to download.",
+
+  # data types
+  data_type_choices = list(
+    "Hourly" = "hourly",
+    "Daily" = "daily",
+    "Moving averages" = "ma",
+    "Growing degree days" = "gdd",
+    "Disease models" = "disease"
+  ),
+
+
+  #-- Disease risk tab
+
+  risk_crop_choices = list(
+    "Corn" = "corn",
+    "Soybean" = "soybean",
+    "Dry bean" = "drybean",
+    "Potato/tomato" = "potato",
+    "Carrot" = "carrot",
+    "Beet" = "beet"
+  ),
+
+  crop_diseases = list(
+    white_mold = c("soybean", "drybean", "potato"),
+    gray_leaf_spot = "corn",
+    tarspot = "corn",
+    frogeye = "soybean",
+    early_blight = "potato",
+    late_blight = "potato",
+    alternaria = "carrot",
+    cercospora = "beet"
+  ),
+
+  risk_info = list(
+    general = "Field crops disease risk assessments are based on probability of spore presence, while algorithms for vegetable diseases vary. Risk model is only valid when the crop is present and in a vulnerable growth stage (if applicable). Risk may be mitigated in commercial production by application of a protective fungicide with the last 14 days. Set the start date to the approximate date of crop emergence for accurate risk assessments. Changing the irrigation and row spacing options below will affect the white mold model output.",
+    corn = "Corn diseases include tarspot and gray leaf spot. Risk assessment is only applicable when corn is in the growth stages V10-R3.",
+    soybean = "Soybean diseases include white mold and frogeye leaf spot. Soybean is vulnerable to white mold when in the growth stages R1-R3, and vulnerable to frogeye leaf spot when in R1-R5.",
+    drybean = "Dry bean diseases include white mold. The crop is vulnerable to white mold when in the growth stages R1-R3.",
+    potato = "Potato, tomato, eggplant, and other Solanaceous plants are susceptible to white mold, early blight and late blight. Early blight risk depends on the number of potato physiological days (P-days) accumulated since crop emergence, while late blight risk depends on the number of disease severity values generated in the last 14 days and since crop emergence.",
+    carrot = "Carrots are susceptible to the foliar disease Alternaria leaf blight. Alternaria risk depends on the number of disease severity values generated in the last 7 days.",
+    beet = "Beets are susceptible to Cercospora leaf blight. Cercospora risk depends on the average disease severity values in the past 2 days and 7 days."
+  ),
+
+  # add site_ before some columns in the sites table
+  # site_attr_rename = {
+  #   cols <- c("id", "name", "lat", "lng")
+  #   names(cols) <- paste0("site_", cols)
+  #   cols
+  # },
+
+  # plotting
+  site_attr_cols = c("site_id", "site_name", "site_lat", "site_lng", "temp"),
+  grid_attr_cols = c("grid_id", "grid_lat", "grid_lng", "date_min", "date_max", "days_expected", "days_actual", "days_missing", "days_missing_pct", "hours_expected", "hours_actual", "hours_missing", "hours_missing_pct", "geometry"),
+  date_attr_cols = c("datetime_utc", "time_zone", "datetime_local", "date", "yday", "year", "month", "day", "hour", "night", "date_since_night"),
+  daily_attr_cols = c("date", "yday", "year", "month", "day"),
+  plot_default_cols = c("temperature", "temperature_mean", "temperature_mean_7day", "base_50_upper_86_cumulative"),
+  plot_ignore_cols = c(site_attr_cols, grid_attr_cols, date_attr_cols),
+  plot_title_font = list(
+    family = "Red Hat Display",
+    size = 16
+  ),
+  plot_axis_font = list(
+    family = "Red Hat Text",
+    size = 14
+  ),
+  plot_legend_font = list(
+    family = "Red Hat Text",
+    size = 12
+  ),
+
+)
 
 
 # IBM API interface ------------------------------------------------------------
@@ -550,7 +573,7 @@ rename_with_units <- function(df, unit_system = c("metric", "imperial")) {
 # Logistic function to convert logit to probability
 logistic <- function(logit) exp(logit) / (1 + exp(logit))
 
-## Any crop ----
+## Corn/Bean ----
 
 #' White mold, dryland model - Any crop
 #' Growth stage: Corn V10-R3, Soy R1-R3
@@ -820,7 +843,7 @@ risk_from_prob <- function(prob, high, med, low) {
   cut(
     prob * 100,
     breaks = c(0, low, med, high, 100),
-    labels = c("Very low", "Low", "Medium", "High"),
+    labels = c("Very low risk", "Low risk", "Medium risk", "High risk"),
     include.lowest = TRUE,
     right = FALSE
   )
@@ -1126,50 +1149,61 @@ build_ma_from_daily <- function(daily, align = c("center", "right")) {
   bind_cols(attr, ma)
 }
 
-#' Plant diseases that use moving averages as inputs
-#' units must be metric: temperature degC, wind speed m
-#' @param ma accepts moving average dataset from `build_ma_from_daily()`
-#' @returns tibble
-build_disease_from_ma <- function(ma) {
-  # retain attribute cols
-  attr <- ma %>% select(grid_id, date)
-
-  # calculate disease models from moving averages
-  disease <- ma %>%
-    mutate(
-      # any crop
-      white_mold_dry_prob = predict_whitemold_dry(temperature_max_30day, kmh_to_mps(wind_speed_max_30day)),
-      white_mold_irrig_30_prob = predict_whitemold_irrig(temperature_max_30day, relative_humidity_max_30day, "30"),
-      white_mold_irrig_15_prob = predict_whitemold_irrig(temperature_max_30day, relative_humidity_max_30day, "15"),
-      # corn
-      gray_leaf_spot_prob = predict_gls(temperature_min_21day, dew_point_min_30day),
-      tarspot_prob = predict_tarspot(temperature_mean_30day, relative_humidity_max_30day, hours_rh_over_90_night_14day),
-      # soy
-      frogeye_leaf_spot_prob = predict_fls(temperature_max_30day, hours_rh_over_80_30day),
-      .keep = "none"
-    )
-
-  # bind attributes
-  bind_cols(attr, disease)
-}
 
 #' Plant diseases that use daily values as inputs
+#' units must be metric: temperature degC, wind speed km/hr
 #' @param daily accepts daily dataset from `build_daily()`
 #' @returns tibble
 build_disease_from_daily <- function(daily) {
+  roll_mean <- function(vec, width) rollapplyr(vec, width, \(x) mean(x, na.rm = T), fill = NA, partial = T)
   # retain attribute cols
   attr <- daily %>% select(grid_id, date)
 
   # generate disease models and add cumulative sums where appropriate
   disease <- daily %>%
     mutate(
+      temperature_max_30day = roll_mean(temperature_max, 30),
+      temperature_mean_30day = roll_mean(temperature_mean, 30),
+      temperature_min_21day = roll_mean(temperature_min, 21),
+      wind_speed_max_30day = roll_mean(wind_speed_max, 30),
+      relative_humidity_max_30day = roll_mean(relative_humidity_max, 30),
+      dew_point_min_30day = roll_mean(dew_point_min, 30),
+      hours_rh_over_80_30day = roll_mean(hours_rh_over_80, 30),
+      hours_rh_over_90_night_14day = roll_mean(hours_rh_over_90_night, 14)
+    ) %>%
+    mutate(
+      # corn/soybean/drybean
+      white_mold_dry_prob =
+        predict_whitemold_dry(temperature_max_30day, kmh_to_mps(wind_speed_max_30day)),
+      white_mold_irrig_30_prob =
+        predict_whitemold_irrig(temperature_max_30day, relative_humidity_max_30day, "30"),
+      white_mold_irrig_15_prob =
+        predict_whitemold_irrig(temperature_max_30day, relative_humidity_max_30day, "15"),
+      # corn
+      gray_leaf_spot_prob =
+        predict_gls(temperature_min_21day, dew_point_min_30day),
+      tarspot_prob =
+        predict_tarspot(temperature_mean_30day, relative_humidity_max_30day, hours_rh_over_90_night_14day),
+      # adjust tarspot probability down when min temp < 10C
+      tarspot_prob = case_when(
+        temperature_min_21day > 10 ~ tarspot_prob,
+        temperature_min_21day > 0 ~ tarspot_prob * (temperature_min_21day) / 10,
+        TRUE ~ 0
+      ),
+      # soybean
+      frogeye_leaf_spot_prob =
+        predict_fls(temperature_max_30day, hours_rh_over_80_30day),
       # potato/tomato
-      potato_pdays = calc_pdays(temperature_min, temperature_max),
-      late_blight_dsv = calc_late_blight_dsv(temperature_mean_rh_over_90, hours_rh_over_90),
+      potato_pdays =
+        calc_pdays(temperature_min, temperature_max),
+      late_blight_dsv =
+        calc_late_blight_dsv(temperature_mean_rh_over_90, hours_rh_over_90),
       # carrot
-      alternaria_dsv = calc_alternaria_dsv(temperature_mean_rh_over_90, hours_rh_over_90),
+      alternaria_dsv =
+        calc_alternaria_dsv(temperature_mean_rh_over_90, hours_rh_over_90),
       # beet
-      cercospora_div = calc_cercospora_div(temperature_mean_rh_over_90, hours_rh_over_90),
+      cercospora_div =
+        calc_cercospora_div(temperature_mean_rh_over_90, hours_rh_over_90),
       .keep = "none", .by = grid_id
     ) %>%
     mutate(
@@ -1185,6 +1219,12 @@ build_disease_from_daily <- function(daily) {
   # bind attributes
   bind_cols(attr, disease)
 }
+
+# saved_weather %>%
+#   build_hourly() %>%
+#   build_daily() %>%
+#   build_disease_from_daily()
+
 
 #' Generate various growing degree day models with and without an 86F upper threshold
 #' input temperatures must be Celsius and will be converted to Fahrenheit GDDs
@@ -1232,7 +1272,7 @@ missing_weather_ui <- function(n = 1) {
   )
 
   div(
-    style = "display: inline-flex; align-items: center; border: 1px solid orange; border-radius: 5px; background-color: white; padding; 5px;",
+    style = "width: 100%; display: inline-flex; align-items: center; border: 1px solid orange; border-radius: 5px; background-color: white; padding; 5px;",
     div(style = "color: orange; padding: 10px; font-size: 1.5em;", icon("warning")),
     div(em(msg, "Press", strong("Fetch weather"), "on the sidebar to download any missing data."))
   )
@@ -1339,6 +1379,7 @@ disease_plot <- function(data, xrange = NULL) {
       yaxis = y1,
       yaxis2 = y2,
       hovermode = "x unified",
+      showlegend = TRUE,
       legend = list(
         height = 100,
         itemsizing = "constant",

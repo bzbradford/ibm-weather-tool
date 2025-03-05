@@ -1,12 +1,12 @@
-name: ibm_weather_data
-title: Researcher's Weather Data Tool
+name: cpn_crop_risk_tool
+title: CPN Crop Risk Tool
 username: bbradford
 account: bbradford
 server: connect.doit.wisc.edu
 hostUrl: https://connect.doit.wisc.edu/__api__
-appId: 399
-bundleId: 3347
-url: https://connect.doit.wisc.edu/weather-tool/
+appId: 438
+bundleId: 3346
+url: https://connect.doit.wisc.edu/cpn-risk-tool/
 version: 1
 asMultiple: FALSE
 asStatic: FALSE

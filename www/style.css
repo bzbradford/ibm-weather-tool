@@ -45,7 +45,6 @@ header {
   width: 100%;
   height: var(--headingHeight);
   padding: 5px;
-  background-color: #c5050c;
   color: white;
   font-weight: bold;
   font-size: 2rem;
@@ -57,7 +56,7 @@ header {
 
 .uw-title {
   display: inline-flex;
-  gap: 5px;
+  column-gap: 10px;
 }
 
 .uw-title img {
@@ -82,8 +81,16 @@ header {
 
 /*--- FOOTER ---*/
 
-.footer {
+footer {
+  width: 100%;
   padding: 10px;
+  padding-top: 0px;
+  display: inline-flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.credits {
   text-align: right;
   color: #888;
   font-style: italic;

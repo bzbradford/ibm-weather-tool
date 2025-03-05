@@ -41,6 +41,15 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
         if (rv$weather_ready != wr) rv$weather_ready <- wr
       })
 
+      wx_ma <- reactive({
+        wx <- wx_data()
+        req(nrow(wx$daily) > 0)
+        list(
+          ma_center = build_ma_from_daily(wx$daily, "center"),
+          ma_right = build_ma_from_daily(wx$daily, "right")
+        )
+      })
+
       ## selected_data // reactive ----
       selected_data <- reactive({
         opts <- list()
@@ -66,8 +75,8 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
           "daily" = wx$daily,
           "ma" = switch(
             opts$ma_align,
-            "center" = wx$ma_center,
-            "right" = wx$ma_right
+            "center" = wx_ma()$ma_center,
+            "right" = wx_ma()$ma_right
           ),
           "disease" = wx$disease,
           "gdd" = wx$gdd
@@ -143,17 +152,6 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
         )
       })
 
-      ## weather_missing_ui // renderUI ----
-      output$weather_missing_ui <- renderUI({
-        sites <- wx_data()$sites
-        req(rv$weather_ready && nrow(sites) > 0 && any(sites$needs_download))
-
-        div(
-          style = "margin-bottom: 15px;",
-          missing_weather_ui(n = nrow(sites))
-        )
-      })
-
       ## plot_ui // renderUI ----
       output$plot_ui <- renderUI({
         div(
@@ -164,6 +162,17 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
             class = "plotly-container",
             plotlyOutput(ns("data_plot"))
           )
+        )
+      })
+
+      ## weather_missing_ui // renderUI ----
+      output$weather_missing_ui <- renderUI({
+        sites <- wx_data()$sites
+        req(rv$weather_ready && nrow(sites) > 0 && any(sites$days_missing > 0))
+
+        div(
+          style = "margin-bottom: 15px;",
+          missing_weather_ui(n = nrow(sites))
         )
       })
 
