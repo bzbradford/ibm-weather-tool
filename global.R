@@ -246,7 +246,7 @@ OPTS <- lst(
   ),
 
   crop_diseases = list(
-    white_mold = c("soybean", "drybean", "potato"),
+    white_mold = c("soybean", "drybean"),
     gray_leaf_spot = "corn",
     tarspot = "corn",
     frogeye = "soybean",
@@ -436,21 +436,37 @@ fetch_weather <- function(sites, start_date, end_date) {
     site <- slice(sites, i)
 
     # already have some weather? find dates to download
-    dates <- if (nrow(wx) > 0) {
+    dates <- dates_need
+
+    if (nrow(wx) > 0) {
       grids <- build_grids(wx)
       wx_status <- weather_status(wx, start_date, end_date)
       site <- st_join(site, grids) %>%
         left_join(wx_status, join_by(grid_id)) %>%
         replace_na(list(needs_download = TRUE))
       if (site$needs_download == FALSE) next
-      dates_have <- wx %>%
-        filter(grid_id == site$grid_id) %>%
-        summarize(hours = n(), .by = c(grid_id, date)) %>%
-        filter(hours > 18) %>%
-        pull(date)
-      as_date(setdiff(dates_need, dates_have))
-    } else {
-      dates_need
+      if (!is.na(site$grid_id)) {
+        tz <- site$tz
+        date_status <- wx %>%
+          filter(grid_id == site$grid_id) %>%
+          filter(between(date, start_date, end_date)) %>%
+          summarize(hours = n(), .by = date) %>%
+          mutate(
+            start_hour = ymd_hms(paste(date, "00:20:00"), tz = tz),
+            end_hour = ymd_hms(paste(date, "23:20:00"), tz = tz),
+            hours_expected = if_else(
+              date == today(),
+              as.integer(difftime(now(tzone = tz), start_hour, "hours")),
+              as.integer(difftime(end_hour, start_hour, "hours"))
+            ) + 1,
+            hours_missing = hours_expected - hours
+          ) %>%
+          filter(hours_missing > 2)
+        dates_have <- date_status %>%
+          filter(hours_missing > 2) %>%
+          pull(date)
+        dates_need <- as_date(setdiff(dates_need, dates_have))
+      }
     }
 
     #TODO: build ibm chunks and strike any that aren't needed?
@@ -475,6 +491,11 @@ fetch_weather <- function(sites, start_date, end_date) {
   write_fst(saved_weather, "data/saved_weather.fst", compress = 99)
   return(status)
 }
+
+# saved_weather %>%
+#   filter(grid_id == first(grid_id)) %>%
+#   weather_status()
+
 
 
 # Variable selection and unit conversion features ------------------------------

@@ -3,7 +3,7 @@
   --headingFont: 'Red Hat Display';
   --textFont: 'Red Hat Text';
   --headingHeight: 50px;
-  --minHeight: calc(100vw * .4);
+  --minHeight: calc(max(100vw, 100vh) * .4);
   --maxHeight: max(calc(100vh - var(--headingHeight) - 2rem), var(--minHeight));
 }
 
@@ -120,6 +120,8 @@ footer {
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
   box-sizing: border-box;
   overflow: auto;
+  min-height: var(--minHeight);
+  max-height: var(--maxHeight);
 }
 
 .column h2 {
@@ -141,8 +143,6 @@ footer {
 .map-container {
   flex: 0 0 calc(40% - 0.67rem);
   position: relative;
-  min-height: min(var(--minHeight), 100vh, 100vw);
-  max-height: var(--maxHeight);
 }
 
 .data-container {
@@ -192,6 +192,12 @@ footer {
   flex: 1;
 }
 
+/* crop type button spacing fix */
+.btn-group-container-sw {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
 
 
 /*--- STYLES ---*/

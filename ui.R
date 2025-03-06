@@ -56,12 +56,18 @@ ui <- fluidPage(
     ),
     div(
       class = "column data-container",
-      tabsetPanel(
-        tabPanel("View data", dataUI(), value = "data"),
-        tabPanel("Crop risk models", riskUI(), value = "risk"),
-        type = "pills",
-        selected = ifelse(OPTS$cpn_mode, "risk", "data")
-      )
+      if (OPTS$cpn_mode) {
+        tagList(
+          h2("Crop risk models"),
+          riskUI()
+        )
+      } else {
+        tabsetPanel(
+          tabPanel("View data", dataUI()),
+          tabPanel("Crop risk models", riskUI()),
+          type = "pills"
+        )
+      }
     )
   ),
   tags$footer(

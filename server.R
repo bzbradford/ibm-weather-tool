@@ -78,10 +78,15 @@ server <- function(input, output, session) {
   })
 
   selected_dates <- reactive({
-    list(
+    dates <- list(
       start = req(rv$start_date),
       end = req(rv$end_date)
     )
+    if ((dates$end - dates$start) > years(1)) {
+      rv$status_msg <- "Date range must be less than 1 year"
+      req(FALSE)
+    }
+    dates
   })
 
   selected_weather <- reactive({
@@ -467,21 +472,28 @@ server <- function(input, output, session) {
   ### date_select_ui // renderUI ----
   output$date_select_ui <- renderUI({
     div(
-      dateInput(
-        inputId = "start_date",
-        label = "Start date:",
-        min = OPTS$earliest_date,
-        max = today(),
-        value = OPTS$default_start_date,
-        width = "100%"
+      class = "flex-across",
+      div(
+        style = "flex: 1 0; min-width: 120px",
+        dateInput(
+          inputId = "start_date",
+          label = "Start date:",
+          min = OPTS$earliest_date,
+          max = today(),
+          value = OPTS$default_start_date,
+          width = "100%"
+        )
       ),
-      dateInput(
-        inputId = "end_date",
-        label = "End date:",
-        min = OPTS$earliest_date,
-        max = today(),
-        value = today(),
-        width = "100%"
+      div(
+        style = "flex: 1 0; min-width: 120px;",
+        dateInput(
+          inputId = "end_date",
+          label = "End date:",
+          min = OPTS$earliest_date,
+          max = today(),
+          value = today(),
+          width = "100%"
+        )
       )
     )
   })
@@ -527,13 +539,10 @@ server <- function(input, output, session) {
 
   ### need_weather // reactive ----
   need_weather <- reactive({
-    # weather checks
     wx <- rv$weather
     if (is.null(wx)) return(TRUE)
     if (nrow(wx) == 0) return(TRUE)
-
     if (nrow(rv$sites) == 0) return(FALSE)
-    # if (nrow(selected_weather()) == 0) return(TRUE)
     sites <- sites_with_status()
     if (anyNA(sites$grid_id)) return(TRUE)
     if (any(sites$needs_download)) return(TRUE)
@@ -571,7 +580,7 @@ server <- function(input, output, session) {
   # reports to user if there's a problem with weather fetching
   output$status_ui <- renderUI({
     msg <- req(rv$status_msg)
-    div(class = msg$class, style = "margin-top: 5px; padding: 10px;", msg$text)
+    div(class = "shiny-output-error", style = "margin-top: 5px; padding: 10px;", msg)
   })
 
   ### Handle fetching ----
@@ -588,12 +597,7 @@ server <- function(input, output, session) {
       value = 0, min = 0, max = nrow(sites),
       {
         status <- fetch_weather(sites, date_range$start, date_range$end)
-        if (status != "ok") {
-          rv$status_msg <- list(
-            class = "shiny-output-error",
-            text = status
-          )
-        }
+        if (status != "ok") rv$status_msg <- status
       }
     )
     rv$action_nonce <- runif(1)
@@ -803,11 +807,10 @@ server <- function(input, output, session) {
             "<b>", title, "</b><br>",
             "Earliest date: ", date_min, "<br>",
             "Latest date: ", date_max, "<br>",
+            if_else(date_max == today(), paste0("Most recent data: ", hours_stale, " hours ago<br>"), ""),
             "Total days: ", days_expected, "<br>",
             "Missing days: ", days_missing, sprintf(" (%.1f%%)", 100 * days_missing_pct), "<br>",
-            "Missing hours: ", hours_missing, sprintf(" (%.1f%%)", 100 * hours_missing_pct), "<br>",
-            "Center latitude: ", sprintf("%.2f", grid_lat), "<br>",
-            "Center longitude: ", sprintf("%.2f", grid_lng)
+            "Missing hours: ", hours_missing, sprintf(" (%.1f%%)", 100 * hours_missing_pct), "<br>"
           ) %>% lapply(HTML)
         )
       map %>%

@@ -93,8 +93,8 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
         tagList(
           div(
             style = "display: flex; flex-direction: row;",
-            uiOutput(ns("white_mold_ui")),
-            uiOutput(ns("show_all_sites_ui"))
+            uiOutput(ns("show_all_sites_ui")),
+            uiOutput(ns("white_mold_ui"))
           ),
           uiOutput(ns("selected_site_ui")),
           uiOutput(ns("weather_missing_ui")),
