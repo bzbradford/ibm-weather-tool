@@ -110,13 +110,7 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
         req(crop %in% crops$white_mold)
 
         irrig_choices <- list("Dry" = "dry", "Irrigated" = "irrig")
-        if (crop == "corn") {
-          spacing_label <- "Row spacing:"
-          spacing_choices <- list("30-inch" = "30", "15-inch" = "15")
-        } else {
-          spacing_label <- "Canopy closure:"
-          spacing_choices <- list("Open" = "30", "Closed" = "15")
-        }
+        spacing_choices <- list("30-inch" = "30", "15-inch" = "15")
 
         div(
           class = "inline-flex",
@@ -132,7 +126,7 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
             "input['risk-irrigation'] == 'irrig'",
             radioButtons(
               inputId = ns("spacing"),
-              label = spacing_label,
+              label = "Row spacing:",
               choices = spacing_choices,
               selected = input$spacing %||% "30",
               inline = TRUE
