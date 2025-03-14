@@ -207,15 +207,12 @@ riskServer <- function(wx_data, selected_site, sites_ready) {
               mutate(risk_label = sprintf("%s: %s (%.0f%%)", name, risk, value * 100))
             risk_date <- first(last_value$date)
             risk_info <- paste(last_value$risk_label, collapse = ", ")
-            plt <- disease_plot(df, xrange = c(dates$start, dates$end))
+            plts <- disease_plot(df, xrange = c(dates$start, dates$end))
 
-            tagList(
-              plt,
-              div(
-                style = "margin-top: 10px; font-style: italic;",
-                strong(paste0("For ", format(risk_date, "%b %d, %Y"), ":")),
-                risk_info
-              )
+            div(
+              class = "flex-down",
+              plts,
+              em(strong(paste0("For ", format(risk_date, "%b %d, %Y"), ":")), risk_info)
             )
           } else {
             strong("No data downloaded yet for this site.")

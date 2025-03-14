@@ -34,9 +34,6 @@ suppressPackageStartupMessages({
 
 # options(warn = 2)
 
-# Sys.setenv("CPN_MODE" = TRUE)
-# Sys.unsetenv("CPN_MODE")
-
 
 # Functions --------------------------------------------------------------------
 
@@ -147,6 +144,9 @@ ll_to_grid <- function(lat, lon, d = 1/45.5) {
 
 # Settings ----
 
+# Sys.setenv("CPN_MODE" = TRUE)
+# Sys.unsetenv("CPN_MODE")
+
 OPTS <- lst(
   cpn_mode = Sys.getenv("CPN_MODE") == "TRUE",
   app_title = ifelse(cpn_mode, "Disease Risk Tool", "Researcher's Weather Data Tool"),
@@ -157,8 +157,13 @@ OPTS <- lst(
   } else {
     img(src = "uw-logo.svg", height = "40px")
   },
-  ibm_endpoint = "https://api.weather.com/v3/wx/hod/r1/direct",
-  ibm_key = Sys.getenv("ibm_key"),
+
+  ibm_keys = list(
+    org_id = Sys.getenv("ibm_org_id"),
+    tenant_id = Sys.getenv("ibm_tenant_id"),
+    api_key = Sys.getenv("ibm_api_key")
+  ),
+
   google_key = Sys.getenv("google_places_key"),
 
   ibm_ignore_cols = c(
@@ -225,13 +230,13 @@ OPTS <- lst(
   validation_weather_ready = "No weather data downloaded yet for the selected dates. Click 'Fetch Weather' to download.",
 
   # data types
-  data_type_choices = list(
+  data_type_choices = as.list(c(
     "Hourly" = "hourly",
     "Daily" = "daily",
     "Moving averages" = "ma",
     "Growing degree days" = "gdd",
-    "Disease models" = "disease"
-  ),
+    { if (!cpn_mode) "Disease models" = "disease" }
+  )),
 
 
   #-- Disease risk tab
@@ -280,19 +285,6 @@ OPTS <- lst(
   daily_attr_cols = c("date", "yday", "year", "month", "day"),
   plot_default_cols = c("temperature", "temperature_mean", "temperature_mean_7day", "base_50_upper_86_cumulative"),
   plot_ignore_cols = c(site_attr_cols, grid_attr_cols, date_attr_cols),
-  plot_title_font = list(
-    family = "Red Hat Display",
-    size = 16
-  ),
-  plot_axis_font = list(
-    family = "Red Hat Text",
-    size = 14
-  ),
-  plot_legend_font = list(
-    family = "Red Hat Text",
-    size = 12
-  ),
-
 )
 
 
@@ -316,6 +308,21 @@ ibm_chunks <- function(start_date, end_date, tz = "UTC") {
 # ibm_chunks("2024-1-1", Sys.Date())
 
 
+# get_ibm_auth <- function() {
+#   url <- "https://api.ibm.com/saascore/run/authentication-retrieve/api-key"
+#   keys <- OPTS$ibm_keys
+#   req <- request(url) %>%
+#     req_url_query(orgId = keys$org_id) %>%
+#     req_headers(
+#       "x-ibm-client-Id" = sprintf("saascore-%s", keys$tenant_id),
+#       "x-api-key" = keys$api_key
+#     )
+#   print(req)
+#   req_perform(req)
+# }
+#
+# get_ibm_auth()
+
 #' Fetch hourly weather data from IBM
 #' API documentation: https://docs.google.com/document/d/13HTLgJDpsb39deFzk_YCQ5GoGoZCO_cRYzIxbwvgJLI/edit?tab=t.0
 #' @param lat latitude of point
@@ -324,18 +331,20 @@ ibm_chunks <- function(start_date, end_date, tz = "UTC") {
 #' @param end_date date or date string
 #' @returns tibble, either with hourly data if successful or empty if failed
 get_ibm <- function(lat, lng, start_date, end_date) {
+  # url <- "https://api.ibm.com/v3/wx/hod/r1/direct"
+  url <- "https://api.weather.com/v3/wx/hod/r1/direct"
   stime <- Sys.time()
   tz <- lutz::tz_lookup_coords(lat, lng, warn = F)
   chunks <- ibm_chunks(start_date, end_date, tz)
   reqs <- lapply(chunks, function(dates) {
-    request(OPTS$ibm_endpoint) %>%
+    request(url) %>%
       req_url_query(
         format = "json",
         geocode = str_glue("{lat},{lng}"),
         startDateTime = dates[1],
         endDateTime = dates[2],
         units = "m",
-        apiKey = OPTS$ibm_key
+        apiKey = OPTS$ibm_keys$api_key
       ) %>%
       req_timeout(10)
   })
@@ -1394,11 +1403,13 @@ site_action_link <- function(action = c("edit", "save", "trash"), site_id, site_
 
 # data should have cols: date, name, value, value_label, risk
 disease_plot <- function(data, xrange = NULL) {
-
   # expand the range by amt %
   yrange <- function(lo, hi, amt = .05) {
     c(lo - abs(hi - lo) * amt, hi + abs(hi - lo) * amt)
   }
+
+  title_font <- list(family = "Redhat Display", size = 14)
+  axis_font <- list(family = "Redhat Text", size = 12)
 
   # axis config
   x <- y1 <- y2 <- list(
@@ -1407,10 +1418,12 @@ disease_plot <- function(data, xrange = NULL) {
     showgrid = FALSE,
     showline = FALSE,
     zeroline = FALSE,
-    fixedrange = TRUE
+    fixedrange = TRUE,
+    tickfont = axis_font
   )
   x$showticklabels <- TRUE
   x$range <- xrange
+  x$hoverformat <- "<b>%b %d, %Y</b>"
   y1$range <- yrange(0, 1)
   y2$range <- yrange(0, 4)
   y2$overlaying <- "y"
@@ -1418,71 +1431,43 @@ disease_plot <- function(data, xrange = NULL) {
   if (!("severity" %in% names(data))) data$severity <- NA
   data <- data %>%
     mutate(
-      yaxis = case_when(
-        grepl("_prob", model) ~ "y1",
-        !is.na(severity) ~ "y2"
-      ),
+      yaxis = if_else(grepl("_prob", model), "y1", "y2"),
       value = coalesce(severity, value)
     )
 
-  # set up plot
-  plt <- plot_ly(height = 100) %>%
-    layout(
-      margin = list(l = 0, r = 0, b = 0, t = 0, pad = 5),
-      paper_bgcolor = 'rgba(0,0,0,0)',
-      plot_bgcolor = 'rgba(0,0,0,0)',
-      xaxis = x,
-      yaxis = y1,
-      yaxis2 = y2,
-      hovermode = "x unified",
-      showlegend = TRUE,
-      legend = list(
-        height = 100,
-        itemsizing = "constant",
-        font = OPTS$plot_legend_font
-      )
-    ) %>%
-    config(displayModeBar = FALSE)
-
-  # add model traces
-  for (model in unique(data$model)) {
-    df <- filter(data, model == !!model)
+  models <- unique(data$model)
+  lapply(models, function(model) {
+    df <- data %>% filter(model == !!model)
     yaxis <- first(df$yaxis)
-    plt <- plt %>%
+    plot_ly(df, x = ~date, y = ~value, height = 100) %>%
       add_trace(
-        data = df,
-        x = ~date,
-        y = ~value,
         name = ~name,
         text = ~value_label,
-        type = 'scatter',
-        mode = 'lines',
+        type = "scatter",
+        mode = "lines+markers",
+        marker = list(color = ~risk_color),
         line = list(width = 2),
         hovertemplate = "%{text}",
+        hoverinfo = "text",
         yaxis = yaxis
-      )
-  }
-
-  # add colored risk markers
-  for (model in unique(data$model)) {
-    df <- filter(data, model == !!model)
-    yaxis <- first(df$yaxis)
-    plt <- plt %>%
-      add_trace(
-        data = df,
-        x = ~date,
-        y = ~value,
-        type = 'scatter',
-        mode = 'markers',
-        marker = list(color = ~risk_color),
-        opacity = .25,
-        hoverinfo = "none",
-        yaxis = yaxis,
+      ) %>%
+      layout(
+        title = list(
+          text = ~sprintf("<b>%s</b>", first(name)),
+          x = 0,
+          y = .99,
+          yanchor = "top",
+          font = title_font
+        ),
+        margin = list(l = 5, r = 5, b = 5, t = 5, pad = 5),
+        xaxis = x,
+        yaxis = y1,
+        yaxis2 = y2,
+        hovermode = "x unified",
         showlegend = FALSE
-      )
-  }
-
-  plt
+      ) %>%
+      config(displayModeBar = FALSE)
+  })
 }
 
 
