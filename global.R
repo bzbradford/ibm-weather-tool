@@ -1,12 +1,5 @@
 #-- global.R --#
 
-# dev ----
-# shiny::devmode(TRUE)
-# renv::snapshot()
-# renv::update()
-# renv::clean()
-
-
 suppressPackageStartupMessages({
   library(tidyverse)
   library(janitor) # name cleaning
@@ -32,7 +25,20 @@ suppressPackageStartupMessages({
   # library(gt)
 })
 
+## development mode
+# shiny::devmode(TRUE)
+
+## RENV
+# renv::update()
+# renv::snapshot()
+# renv::clean()
+
+## turn warnings into errors
 # options(warn = 2)
+
+## test the CPN skin
+# Sys.setenv("CPN_MODE" = TRUE)
+# Sys.unsetenv("CPN_MODE")
 
 
 # Functions --------------------------------------------------------------------
@@ -144,9 +150,6 @@ ll_to_grid <- function(lat, lon, d = 1/45.5) {
 
 # Settings ----
 
-# Sys.setenv("CPN_MODE" = TRUE)
-# Sys.unsetenv("CPN_MODE")
-
 OPTS <- lst(
   cpn_mode = Sys.getenv("CPN_MODE") == "TRUE",
   app_title = ifelse(cpn_mode, "Disease Risk Tool", "Researcher's Weather Data Tool"),
@@ -163,6 +166,10 @@ OPTS <- lst(
     tenant_id = Sys.getenv("ibm_tenant_id"),
     api_key = Sys.getenv("ibm_api_key")
   ),
+  ibm_auth_endpoint = "https://api.ibm.com/saascore/run/authentication-retrieve/api-key",
+  ibm_weather_endpoint = "https://api.ibm.com/geospatial/run/v3/wx/hod/r1/direct",
+  # max hours per api call
+  ibm_chunk_size = 999,
 
   google_key = Sys.getenv("google_places_key"),
 
@@ -297,10 +304,10 @@ OPTS <- lst(
 #' @returns list of two-element formatted datetime strings
 ibm_chunks <- function(start_date, end_date, tz = "UTC") {
   start_dttm <- as_datetime(start_date, tz = tz)
-  end_dttm <- as_datetime(end_date, tz = tz) + hours(23)
-  chunks <- seq(start_dttm, end_dttm, by = as.difftime(hours(999)))
+  end_dttm <- as_datetime(end_date, tz = tz) + minutes(23.5 * 60)
+  chunks <- seq(start_dttm, end_dttm, by = as.difftime(hours(OPTS$ibm_chunk_size)))
   chunks <- lapply(1:length(chunks), function(i) {
-    c(chunks[i], ifelse(i < length(chunks), chunks[i + 1], end_dttm))
+    c(chunks[i], ifelse(i < length(chunks), chunks[i + 1] - minutes(30), end_dttm))
   })
   lapply(chunks, function(chunk) format(chunk, "%Y-%m-%dT%H:%M:%S%z"))
 }
@@ -308,20 +315,58 @@ ibm_chunks <- function(start_date, end_date, tz = "UTC") {
 # ibm_chunks("2024-1-1", Sys.Date())
 
 
-# get_ibm_auth <- function() {
-#   url <- "https://api.ibm.com/saascore/run/authentication-retrieve/api-key"
-#   keys <- OPTS$ibm_keys
-#   req <- request(url) %>%
-#     req_url_query(orgId = keys$org_id) %>%
-#     req_headers(
-#       "x-ibm-client-Id" = sprintf("saascore-%s", keys$tenant_id),
-#       "x-api-key" = keys$api_key
-#     )
-#   print(req)
-#   req_perform(req)
-# }
-#
-# get_ibm_auth()
+#' Get the authorization token from the authentication server
+#' @param url IBM authentication endpoint
+#' @param keys list with org_id, tenant_id, and api_key
+refresh_auth <- function(url = OPTS$ibm_auth_endpoint, keys = OPTS$ibm_keys) {
+  ibm_auth <<- tryCatch({
+    req <- request(url) %>%
+      req_url_query(orgId = keys$org_id) %>%
+      req_headers_redacted(
+        "x-ibm-client-id" = sprintf("saascore-%s", keys$tenant_id),
+        "x-api-key" = keys$api_key
+      )
+    resp <- req_perform(req)
+    message("Authorization token refreshed at ", now("UTC"))
+    list(
+      timestamp = now("UTC"),
+      status = resp_status(resp),
+      token = resp_body_string(resp)
+    )
+  }, catch = function(e) {
+    message("Failed to get authorization token: ", e$message)
+    list(
+      timestamp = 1,
+      status = 500,
+      token = NULL
+    )
+  })
+  saveRDS(ibm_auth, "ibm_auth.rds")
+}
+
+# refresh_auth()
+
+
+# Get the current IBM token or refresh if needed
+# token is valid for 1 hour
+get_ibm_token <- function() {
+  # look for a stored token if available
+  if (!exists("ibm_auth")) {
+    if (file.exists("ibm_auth.rds")) {
+      ibm_auth <<- read_rds("ibm_auth.rds")
+    } else {
+      refresh_auth()
+    }
+  }
+
+  # if token is stale get a new one
+  if (ibm_auth$timestamp < now("UTC") - minutes(59)) refresh_auth()
+
+  ibm_auth$token
+}
+
+# get_ibm_token()
+
 
 #' Fetch hourly weather data from IBM
 #' API documentation: https://docs.google.com/document/d/13HTLgJDpsb39deFzk_YCQ5GoGoZCO_cRYzIxbwvgJLI/edit?tab=t.0
@@ -330,39 +375,69 @@ ibm_chunks <- function(start_date, end_date, tz = "UTC") {
 #' @param start_date date or date string
 #' @param end_date date or date string
 #' @returns tibble, either with hourly data if successful or empty if failed
-get_ibm <- function(lat, lng, start_date, end_date) {
-  # url <- "https://api.ibm.com/v3/wx/hod/r1/direct"
-  url <- "https://api.weather.com/v3/wx/hod/r1/direct"
+get_ibm <- function(lat, lng, start_date, end_date, url = OPTS$ibm_weather_endpoint) {
   stime <- Sys.time()
   tz <- lutz::tz_lookup_coords(lat, lng, warn = F)
   chunks <- ibm_chunks(start_date, end_date, tz)
-  reqs <- lapply(chunks, function(dates) {
-    request(url) %>%
-      req_url_query(
-        format = "json",
-        geocode = str_glue("{lat},{lng}"),
-        startDateTime = dates[1],
-        endDateTime = dates[2],
-        units = "m",
-        apiKey = OPTS$ibm_keys$api_key
-      ) %>%
-      req_timeout(10)
+
+  responses <- tryCatch({
+    token <- get_ibm_token()
+    if (!is.character(token)) stop("Failed to get IBM token.")
+
+    reqs <- lapply(chunks, function(dates) {
+      request(url) %>%
+        req_headers_redacted(
+          "x-ibm-client-id" = sprintf("geospatial-%s", OPTS$ibm_keys$tenant_id),
+          "Authorization" = sprintf("Bearer %s", token)
+        ) %>%
+        req_url_query(
+          format = "json",
+          geocode = str_glue("{lat},{lng}"),
+          startDateTime = dates[1],
+          endDateTime = dates[2],
+          units = "m"
+        ) %>%
+        req_timeout(10)
+    })
+
+    # perform parallel requests for each time chunk
+    resps <- req_perform_parallel(reqs, on_error = "continue", progress = F)
+
+    # gather response data
+    lapply(resps, function(resp) {
+      tryCatch({
+        if (resp_status(resp) != 200) stop(paste0("Received status ", resp_status(resp), " with message ", resp_status_desc(resp)))
+        resp_body_json(resp, simplifyVector = T) %>% as_tibble()
+      }, error = function(e) {
+        message(e$message)
+        tibble()
+      })
+    })
+  }, error = function(e) {
+    message(e$message)
+    tibble()
   })
-  resps <- req_perform_parallel(reqs, on_error = "continue", progress = F)
-  responses <- lapply(resps, function(resp) {
-    tryCatch({
-      if (resp_status(resp) != 200) {
-        message("Received status ", resp_status(resp), " with message ", resp_status_desc(resp))
-        stop()
-      }
-      resp_body_json(resp, simplifyVector = T) %>% as_tibble()
-    }, error = function(e) return(tibble()))
-  })
+
   wx <- bind_rows(responses)
-  msg <- str_glue("weather for {lat}, {lng} from {start_date} to {end_date} in {Sys.time() - stime}")
-  message(ifelse(nrow(wx) > 0, "OK ==> Got ", "FAIL ==> Could not get "), msg)
+  msg <- if (nrow(wx) > 0) {
+    str_glue("OK ==> Got weather for {lat}, {lng} from {start_date} to {end_date} in {round(Sys.time() - stime, 3)} using {length(chunks)} calls")
+  } else {
+    str_glue("FAIL ==> Could not get weather for {lat}, {lng} from {start_date} to {end_date}")
+  }
+  message(msg)
   wx
 }
+
+# should succeed
+# get_ibm(43.0731, -89.4012, "2024-1-1", "2024-1-2")
+# df <- get_ibm(43.0731, -89.4012, "2024-1-1", "2024-12-31") %>% clean_ibm()
+# ggplot(df, aes(x = datetime_local, y = temperature)) + geom_line()
+
+# should fail
+# get_ibm(43.0731, -89.4012, "2024-1-1", "2024-12-31", url = 'foo')
+
+# should partially fail because start date is before earliest data 2015-6-29
+# get_ibm(43.0731, -89.4012, "2015-1-1", "2015-8-1")
 
 
 #' Does some minimal processing on the IBM response to set local time and date
