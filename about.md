@@ -37,9 +37,9 @@ Selected field crops and vegetable disease model outputs are provided. These mod
 
 ## Credits and Contacts
 
--   Ben Bradford (Developer): [bbradford\@wisc.edu](mailto:bbradford@wisc.edu){.email}
--   Damon Smith (Extension Plant Pathologist): [damon.smith\@wisc.edu](mailto:damon.smith@wisc.edu){.email}
--   Crop Protection Network: [info\@cropprotectionnetwork.org](mailto:info@cropprotectionnetwork.org){.email}
+-   Ben Bradford (Developer): [bbradford\@wisc.edu](mailto:bbradford@wisc.edu)
+-   Damon Smith (Extension Plant Pathologist): [damon.smith\@wisc.edu](mailto:damon.smith@wisc.edu)
+-   Crop Protection Network: [info\@cropprotectionnetwork.org](mailto:info@cropprotectionnetwork.org)
 
 ## Funding Sources
 
