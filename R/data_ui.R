@@ -120,6 +120,7 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
             inputId = ns("data_type"),
             label = "Dataset",
             choices = OPTS$data_type_choices,
+            selected = input$data_type %||% first(OPTS$data_type_choices),
             individual = TRUE,
             size = "sm"
           ),
@@ -169,7 +170,7 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
       ## weather_missing_ui // renderUI ----
       output$weather_missing_ui <- renderUI({
         sites <- wx_data()$sites
-        req(rv$ready, nrow(sites) > 0, any(sites$days_missing > 0))
+        req(rv$ready, nrow(sites) > 0, any(sites$needs_download))
 
         div(
           style = "margin-bottom: 15px;",
@@ -401,8 +402,9 @@ dataServer <- function(wx_data, selected_site, sites_ready) {
 
       ## download_data // reactive ----
       download_data <- reactive({
+        unit_system <- if_else(input$metric, "metric", "imperial")
         selected_data() %>%
-          rename_with_units() %>%
+          rename_with_units(unit_system) %>%
           mutate(across(any_of(c("datetime_utc", "datetime_local")), as.character)) %>%
           clean_names("big_camel")
       })

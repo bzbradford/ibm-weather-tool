@@ -35,20 +35,25 @@ suppressPackageStartupMessages({
 # renv::snapshot()
 # renv::clean()
 
+# renv::install("httr2@1.1.0")
+# renv::install("terra@1.8-42")
+
+
 ## turn warnings into errors
 # options(warn = 2)
+
+# options(forecast = FALSE)
 
 # set up a second session for asynchronous tasks
 plan(multisession(workers = 2))
 
-# renv::install("httr2@1.1.0")
-# renv::install("terra@1.8-42")
 
 
 # Startup ----------------------------------------------------------------------
 
 ## Load files ----
 saved_weather_file <- "data/saved_weather.fst"
+# file.remove(saved_weather_file)
 saved_weather <- if (file.exists(saved_weather_file)) {
   read_fst(saved_weather_file) %>%
     as_tibble() %>%
@@ -382,15 +387,6 @@ OPTS <- lst(
   ## dates ----
   earliest_date = ymd("2015-1-1"),
   default_start_date = today() - 30,
-  date_btn_choices = list(
-    "Past week" = "week",
-    "Past month" = "month",
-    "This year" = "thisyear",
-    "Full year" = "fullyear",
-    "Last year" = "lastyear",
-    "Last season" = "lastseason"
-  ),
-
 
   ## map ----
   # state_colors = {
@@ -858,7 +854,9 @@ fetch_weather <- function(sites, start_date, end_date) {
         status_msg <- sprintf("Unable to get some/all weather for %.2f, %.2f from %s to %s.", site$lat, site$lng, start_date, end_date)
         next
       }
-      new_wx <- clean_ibm(resp)
+      new_wx <- resp %>%
+        clean_ibm() %>%
+        build_hourly()
       wx <- bind_rows(new_wx, wx) %>%
         distinct(grid_id, datetime_utc, .keep_all = T)
     }
@@ -867,29 +865,6 @@ fetch_weather <- function(sites, start_date, end_date) {
   saved_weather <<- wx %>% arrange(grid_lat, grid_lng, datetime_utc)
   write_fst(saved_weather, "data/saved_weather.fst", compress = 99)
   return(status_msg)
-}
-
-
-
-#' Does some minimal processing on the IBM response to set local time and date
-#' @param ibm_response hourly weather data received from API
-#' @returns tibble
-clean_ibm <- function(ibm_response) {
-  if (nrow(ibm_response) == 0) return(tibble())
-  ibm_response %>%
-    select(-OPTS$ibm_ignore_cols) %>%
-    select(
-      grid_id = gridpointId,
-      grid_lat = latitude,
-      grid_lng = longitude,
-      datetime_utc = validTimeUtc,
-      everything()
-    ) %>%
-    clean_names() %>%
-    mutate(across(datetime_utc, ~parse_date_time(.x, "YmdHMSz"))) %>%
-    mutate(time_zone = lutz::tz_lookup_coords(grid_lat, grid_lng, warn = F), .after = datetime_utc) %>%
-    mutate(datetime_local = with_tz(datetime_utc, first(time_zone)), .by = time_zone, .after = time_zone) %>%
-    mutate(date = as_date(datetime_local), .after = datetime_local)
 }
 
 
@@ -943,8 +918,8 @@ measures <- tribble(
   "relative_humidity",       "%",    "%",    \(x) x, # no conversion
   "precip",                  "mm",   "in",   mm_to_in,
   "snow",                    "cm",   "in",   cm_to_in,
-  "wind_speed",              "m/s",  "mph",  mps_to_mph,
-  "wind_gust",               "m/s",  "mph",  mps_to_mph,
+  "wind_speed",              "kmh",  "mph",  km_to_mi,
+  "wind_gust",               "kmh",  "mph",  km_to_mi,
   "wind_direction",          "°",    "°",    \(x) x, # no conversion
   "pressure_mean_sea_level", "mbar", "inHg", mbar_to_inHg,
   "pressure_change",         "mbar", "inHg", mbar_to_inHg,
@@ -1033,6 +1008,30 @@ build_grids <- function(wx) {
 # saved_weather %>% build_grids()
 
 
+#' Add some more information for displaying on the map
+annotate_grids <- function(grids_with_status) {
+  grids_with_status %>%
+    mutate(
+      title = if_else(needs_download, "Weather grid (download required)", "Weather grid"),
+      color = if_else(needs_download, "orange", "darkgreen"),
+      label = paste0(
+        "<b>", title, "</b><br>",
+        "Earliest date: ", date_min, "<br>",
+        "Latest date: ", date_max, "<br>",
+        if_else(date_max == today(), paste0("Most recent data: ", hours_stale, " hours ago<br>"), ""),
+        "Total days: ", days_expected, "<br>",
+        "Missing days: ", days_missing, sprintf(" (%.1f%%)", 100 * days_missing_pct), "<br>",
+        "Missing hours: ", hours_missing, sprintf(" (%.1f%%)", 100 * hours_missing_pct), "<br>"
+      ) %>% lapply(HTML)
+    )
+}
+
+# test_grids <- saved_weather %>% build_grids()
+# test_status <- saved_weather %>% weather_status(today() - days(30), today())
+# left_join(test_grids, test_status) %>%
+#   annotate_grids()
+
+
 #' Summarize downloaded weather data by grid cell and creates sf object
 #' used to intersect site points with existing weather data
 #' @param wx hourly weather data from `clean_ibm` function
@@ -1062,7 +1061,7 @@ weather_status <- function(wx, start_date = min(wx$date), end_date = max(wx$date
       hours_missing_pct = hours_missing / hours_expected,
       hours_stale = as.integer(difftime(time_max_expected, time_max_actual, units = "hours")),
       stale = hours_stale > OPTS$ibm_stale_hours,
-      needs_download = stale | days_missing > 0,
+      needs_download = stale | ((days_missing > 0) & (hours_missing > 12)),
       .by = grid_id
     ) %>%
     select(-tz)
@@ -1705,6 +1704,28 @@ gdd_sine <- function(tmin, tmax, base) {
 
 # Data pipeline ----------------------------------------------------------------
 
+#' Does some minimal processing on the IBM response to set local time and date
+#' @param ibm_response hourly weather data received from API
+#' @returns tibble
+clean_ibm <- function(ibm_response) {
+  if (nrow(ibm_response) == 0) return(tibble())
+  ibm_response %>%
+    select(-OPTS$ibm_ignore_cols) %>%
+    select(
+      grid_id = gridpointId,
+      grid_lat = latitude,
+      grid_lng = longitude,
+      datetime_utc = validTimeUtc,
+      everything()
+    ) %>%
+    clean_names() %>%
+    mutate(across(datetime_utc, ~parse_date_time(.x, "YmdHMSz"))) %>%
+    mutate(time_zone = lutz::tz_lookup_coords(grid_lat, grid_lng, warn = F), .after = datetime_utc) %>%
+    mutate(datetime_local = with_tz(datetime_utc, first(time_zone)), .by = time_zone, .after = time_zone) %>%
+    mutate(date = as_date(datetime_local), .after = datetime_local)
+}
+
+
 #' Creates the working hourly weather dataset from cleaned ibm response
 #' @param ibm_hourly hourly weather data from `clean_ibm` function
 #' @returns tibble
@@ -1748,6 +1769,7 @@ build_daily <- function(hourly) {
   summary_fns <- c("min" = calc_min, "mean" = calc_mean, "max" = calc_max)
   by_date <- hourly %>%
     summarize(
+      hours = n(),
       across(c(temperature, dew_point, dew_point_depression, relative_humidity), summary_fns),
       across(c(precip, snow), c("daily" = calc_sum, "max_hourly" = calc_max)),
       across(c(pressure_mean_sea_level, wind_speed), summary_fns),
@@ -1787,6 +1809,7 @@ build_daily <- function(hourly) {
 
   # assemble the data
   by_date %>%
+    filter(hours >= 12) %>%
     left_join(by_night, join_by(grid_id, date == date_since_night)) %>%
     left_join(lat_lng, join_by(grid_id)) %>%
     relocate(grid_lat, grid_lng, .after = grid_id) %>%
@@ -1825,6 +1848,7 @@ build_ma_from_daily <- function(daily, align = c("center", "right")) {
 
   # apply moving average functions to each primary data column
   ma <- daily %>%
+    select(-hours) %>%
     mutate(
       across(starts_with(c("temperature", "dew_point", "relative_humidity", "wind", "pressure", "hours")), fns),
       .keep = "none"
@@ -1963,45 +1987,11 @@ sites_template <- tibble(
   temp = logical()
 )
 
-#' Return the next available id number for creating a new site
-#' @param ids vector of numeric ids that are already in use
-create_id <- function(ids) {
-  ids <- as.integer(ids)
-  possible_ids <- 1:(length(ids) + 1)
-  setdiff(possible_ids, ids)
+Site <- function(name, lat, lng, temp = TRUE, id = 999) {
+  site <- as.list(environment())
 }
 
-# # should return 4
-# create_id(c(1, 2, 3, 5))
-
-
-#' Validate and fill in defaults for new sites
-#' @param loc named list with location attributes
-create_site <- function(loc, sites) {
-  loc$id <- create_id(sites$id)
-  loc$temp <- !isTruthy(loc$temp)
-
-  # make sure it has all the attributes
-  missing_attr <- setdiff(names(sites_template), names(loc))
-  if (isTruthy(missing_attr)) stop("Loc is missing ", missing_attr)
-
-  # validate lat/lng
-  req(validate_ll(loc$lat, loc$lng))
-
-  # keep only approved names
-  loc <- loc[names(loc) %in% names(sites_template)]
-
-  loc
-}
-
-# # should succeed and assign id 1
-# create_site(list(lat = 45, lng = -89, name = "foo"), sites_template)
-#
-# # should fail, invalid lat/lng
-# create_site(list(lat = -45, lng = -89, name = "foo"), sites_template)
-#
-# # should fail, loc is missing keys
-# create_site(list(), sites_template)
+# Site("foo", 1, 2)
 
 
 #' Try read sites list from csv
@@ -2062,7 +2052,7 @@ missing_weather_ui <- function(n = 1) {
   )
 
   div(
-    style = "width: 100%; display: inline-flex; align-items: center; border: 1px solid orange; border-radius: 5px; background-color: white; padding; 5px;",
+    class = "missing-weather-notice",
     div(style = "color: orange; padding: 10px; font-size: 1.5em;", icon("warning")),
     div(em(msg, "Press", strong("Fetch weather"), "on the sidebar to download any missing data."))
   )
@@ -2120,3 +2110,49 @@ show_modal <- function(md, title = NULL) {
 
 
 
+# Extra/unused ----
+
+## Data structures ----
+
+# cat_names <- function(df) {
+#   message(deparse(substitute(df)))
+#   cat("c(")
+#   cat(paste(paste0("\"", names(df), "\""), collapse = ", "))
+#   cat(")\n")
+# }
+
+# get_specs <- function() {
+#   ibm <- get_ibm(45, -89, today() - 1, today())
+#   cat_names(ibm)
+
+#   ibm_clean <- clean_ibm(ibm)
+#   cat_names(ibm_clean)
+
+#   hourly <- build_hourly(ibm_clean)
+#   cat_names(hourly)
+
+#   daily <- build_daily(hourly)
+#   cat_names(daily)
+# }
+
+# get_specs()
+
+
+## County shapefile ----
+
+# prep_counties <- function() {
+#   states <- read_sf("prep/cb-2018-conus-state-20m.geojson") %>%
+#     clean_names() %>%
+#     st_drop_geometry() %>%
+#     select(statefp, state_name = name)
+
+#   counties_sf <- read_sf("prep/cb-2018-conus-county-5m.geojson") %>%
+#     clean_names() %>%
+#     select(statefp, countyfp, county_name = name, geometry) %>%
+#     left_join(states) %>%
+#     relocate(state_name, .after = statefp)
+
+#   counties_sf %>% write_rds("data/counties-conus.rds")
+# }
+
+# prep_counties()
